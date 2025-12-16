@@ -337,11 +337,16 @@ export default {
               }
             }
 
+            // Flush after each run so notebook cells can react incrementally.
+            model.set("results", results.slice());
+            model.set("results_len", results.length);
+            model.save_changes();
+
             await raf();
           }
         }
 
-        model.set("results", results);
+        model.set("results", results.slice());
         model.set("results_len", results.length);
         model.set("done", true);
         model.save_changes();
