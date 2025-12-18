@@ -61,11 +61,13 @@ function generateState(params, seedValue, model) {
   const width = model.get("arena_width");
   const height = model.get("arena_height");
   const radius = model.get("unit_radius");
+  const spawnMode = String(model.get("spawn_mode") || "sides");
 
   const spawnSide = (team) => {
     const margin = 2 * radius + 4;
-    const x =
-      team === "blue"
+    const x = spawnMode === "mixed"
+      ? margin + rng() * (width - 2 * margin)
+      : team === "blue"
         ? margin + rng() * (width * 0.35 - margin)
         : width * 0.65 + rng() * (width * 0.35 - margin);
     const y = margin + rng() * (height - 2 * margin);

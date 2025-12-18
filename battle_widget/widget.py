@@ -36,6 +36,7 @@ class BattleWidget(anywidget.AnyWidget):
     arena_width = traitlets.Int(640).tag(sync=True)
     arena_height = traitlets.Int(420).tag(sync=True)
     unit_radius = traitlets.Float(4.0).tag(sync=True)
+    spawn_mode = traitlets.Unicode("sides", help='"sides" spawns teams on opposite halves; "mixed" mixes both sides across the arena.').tag(sync=True)
 
     step_dt = traitlets.Float(0.02).tag(sync=True)  # seconds
     move_speed = traitlets.Float(55.0).tag(sync=True)  # pixels / second
