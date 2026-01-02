@@ -50,6 +50,7 @@ class BattleWidget(anywidget.AnyWidget):
     record_dt = traitlets.Float(0.1).tag(sync=True)
 
     render = traitlets.Bool(True).tag(sync=True)
+    speed_multiplier = traitlets.Int(1, help="Number of simulation steps per render frame. Higher = faster simulation.").tag(sync=True)
     done = traitlets.Bool(False).tag(sync=True)
     results = traitlets.List(traitlets.Dict()).tag(sync=True)
     results_len = traitlets.Int(0).tag(sync=True)

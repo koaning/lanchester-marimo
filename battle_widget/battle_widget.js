@@ -168,6 +168,7 @@ function step(state, model) {
 
   // Attacks (will be replaced with melee soon; kept minimal for now).
   const toKill = new Set();
+  const attacks = []; // Track attacks for rendering
   for (const u of all) {
     u.cooldown = Math.max(0, u.cooldown - dt);
     if (u.cooldown > 0) continue;
@@ -188,11 +189,22 @@ function step(state, model) {
     if (!best || bestD2 > range2) continue;
 
     u.cooldown = cooldown;
-    if (state.rng() <= hitChance) {
+    const hit = state.rng() <= hitChance;
+    // Record the attack for visualization
+    attacks.push({
+      x1: u.x,
+      y1: u.y,
+      x2: best.x,
+      y2: best.y,
+      team: u.team,
+      hit,
+    });
+    if (hit) {
       best.hp -= damage;
       if (best.hp <= 0) toKill.add(best.id);
     }
   }
+  state.attacks = attacks;
 
   if (toKill.size > 0) {
     state.blue = state.blue.filter((u) => !toKill.has(u.id));
@@ -214,6 +226,21 @@ function draw(ctx, state, model) {
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = "#0b1220";
   ctx.fillRect(0, 0, width, height);
+
+  // Draw attack lines (laser/gunshot effect)
+  if (state.attacks && state.attacks.length > 0) {
+    ctx.lineWidth = 1.5;
+    for (const atk of state.attacks) {
+      ctx.beginPath();
+      ctx.moveTo(atk.x1, atk.y1);
+      ctx.lineTo(atk.x2, atk.y2);
+      // Blue team shoots cyan, red team shoots orange-ish
+      ctx.strokeStyle = atk.team === "blue" ? "#22d3ee" : "#fbbf24";
+      ctx.globalAlpha = atk.hit ? 0.9 : 0.5;
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1.0;
+  }
 
   const drawUnit = (u, fill) => {
     ctx.beginPath();
@@ -245,7 +272,24 @@ const raf = () => new Promise((resolve) => requestAnimationFrame(resolve));
 export default {
   render({ model, el }) {
     const renderEnabled = Boolean(model.get("render"));
-    const canvas = renderEnabled ? ensureCanvas(el, model) : null;
+
+    // Create container for controls and canvas
+    const container = document.createElement("div");
+    container.className = "battle-root";
+    el.appendChild(container);
+
+    // Create pause button
+    const controlsRow = document.createElement("div");
+    controlsRow.className = "battle-controls battle-row";
+
+    const pauseBtn = document.createElement("button");
+    pauseBtn.textContent = "Pause";
+    pauseBtn.className = "battle-pause-btn";
+    controlsRow.appendChild(pauseBtn);
+
+    container.appendChild(controlsRow);
+
+    const canvas = renderEnabled ? ensureCanvas(container, model) : null;
     const ctx = canvas ? canvas.getContext("2d") : null;
 
     model.set("done", false);
@@ -255,6 +299,12 @@ export default {
     model.save_changes();
 
     let cancelled = false;
+    let paused = false;
+
+    pauseBtn.addEventListener("click", () => {
+      paused = !paused;
+      pauseBtn.textContent = paused ? "Resume" : "Pause";
+    });
 
     (async () => {
       try {
@@ -267,6 +317,7 @@ export default {
 
         const results = [];
         let globalRunIndex = 0;
+        const speedMultiplier = Math.max(1, Number(model.get("speed_multiplier") || 1));
 
         for (const params of gridPoints) {
           for (let r = 0; r < runsPerPoint; r++) {
@@ -289,28 +340,47 @@ export default {
             });
             nextRecordT += recordDt;
 
-            let steps = 0;
+            let frameCount = 0;
+            let accumulatedAttacks = []; // Accumulate attacks between renders
             while (!state.done && state.t < maxTime) {
-              step(state, model);
-              steps += 1;
+              // Wait while paused
+              while (paused && !cancelled) {
+                await raf();
+              }
+              if (cancelled) return;
 
-              if (state.t + 1e-9 >= nextRecordT) {
-                results.push({
-                  run_id: runId,
-                  seed: seedUsed,
-                  time: Number(state.t.toFixed(6)),
-                  n_blue: state.blue.length,
-                  n_red: state.red.length,
-                });
-                nextRecordT += recordDt;
+              // Run multiple steps per frame based on speed multiplier
+              for (let s = 0; s < speedMultiplier && !state.done && state.t < maxTime; s++) {
+                step(state, model);
+
+                // Accumulate attacks for rendering
+                if (state.attacks && state.attacks.length > 0) {
+                  accumulatedAttacks.push(...state.attacks);
+                }
+
+                if (state.t + 1e-9 >= nextRecordT) {
+                  results.push({
+                    run_id: runId,
+                    seed: seedUsed,
+                    time: Number(state.t.toFixed(6)),
+                    n_blue: state.blue.length,
+                    n_red: state.red.length,
+                  });
+                  nextRecordT += recordDt;
+                }
+
+                if (!Number.isFinite(state.t)) break;
               }
 
-              if (!Number.isFinite(state.t)) break;
+              frameCount += 1;
 
-              if (renderEnabled && ctx && steps % 5 === 0) {
+              if (renderEnabled && ctx) {
+                // Pass accumulated attacks to draw, then clear
+                state.attacks = accumulatedAttacks;
                 draw(ctx, state, model);
+                accumulatedAttacks = [];
                 await raf();
-              } else if (steps % 500 === 0) {
+              } else if (frameCount % 100 === 0) {
                 await raf();
               }
             }
@@ -352,10 +422,14 @@ export default {
         model.set("results_len", results.length);
         model.set("done", true);
         model.save_changes();
+        pauseBtn.disabled = true;
+        pauseBtn.textContent = "Done";
       } catch (e) {
         model.set("error", String(e && e.message ? e.message : e));
         model.set("done", true);
         model.save_changes();
+        pauseBtn.disabled = true;
+        pauseBtn.textContent = "Done";
       }
     })();
 
